@@ -1,0 +1,8 @@
+[submodule "ros2_ws/src/velodyne"]
+	path = ros2_ws/src/velodyne
+	url = https://github.com/ros-drivers/velodyne.git
+	branch = ros2
+[submodule "ros2_ws/src/rf2o_laser_odometry"]
+	path = ros2_ws/src/rf2o_laser_odometry
+	url = https://github.com/MAPIRlab/rf2o_laser_odometry.git
+	branch = ros2
