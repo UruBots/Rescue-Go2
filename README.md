@@ -23,7 +23,8 @@ Rescue-Go2/
 │       ├── velodyne_slam_launch.py  # Full SLAM launch file
 │       ├── velodyne_slam_rviz.rviz  # RViz config for SLAM
 │       ├── velodyne/                # Velodyne VLP-16 driver (submodule)
-│       └── rf2o_laser_odometry/     # Laser-based odometry (submodule)
+│       ├── rf2o_laser_odometry/     # Laser-based odometry (submodule)
+│       └── go2_ros2_sdk/            # Unitree Go2 ROS2 SDK (submodule)
 │
 └── README.md
 ```
@@ -52,6 +53,13 @@ Velodyne VLP-16 → velodyne_driver → PointCloud2 → LaserScan
 - **SLAM Toolbox**: Online async mode, 0.05m resolution, loop closure enabled
 - Single launch file starts the complete pipeline
 
+### 🎮 Robot Control — Unitree Go2
+
+- **go2_ros2_sdk**: ROS2 SDK for controlling the Unitree Go2 robot
+- Keyboard teleoperation for manual control
+- Connects to the robot via WiFi (robot acts as access point)
+- Publishes and subscribes to standard ROS2 topics (`/cmd_vel`, `/odom`, etc.)
+
 ---
 
 ## 🚀 Quick Start
@@ -61,6 +69,9 @@ Velodyne VLP-16 → velodyne_driver → PointCloud2 → LaserScan
 - Ubuntu 22.04+
 - ROS2 Humble/Jazzy
 - Python 3.10+
+- Unitree Go2 robot (for robot control)
+- Velodyne VLP-16 (for SLAM)
+- Raspberry Pi with camera (for UDP video stream)
 
 ### 1. Clone (with submodules)
 
@@ -101,7 +112,26 @@ pip install ultralytics opencv-python pyzbar numpy
 
 ## 📖 Usage
 
-### Run SLAM with Velodyne
+### 🎮 Connect & Control the Unitree Go2
+
+1. **Turn on the Go2** and connect to its WiFi network
+2. The robot's default IP is `192.168.12.1`
+3. Follow the [go2_ros2_sdk setup instructions](https://github.com/abizovnuralem/go2_ros2_sdk) for dependencies (CycloneDDS, etc.)
+4. Launch the SDK:
+
+```bash
+cd ros2_ws
+source install/setup.bash
+ros2 launch go2_ros2_sdk go2_ros2_sdk.launch.py
+```
+
+5. In another terminal, control with keyboard:
+
+```bash
+ros2 run teleop_twist_keyboard teleop_twist_keyboard
+```
+
+### 🗺️ Run SLAM with Velodyne
 
 Connect the Velodyne VLP-16 via Ethernet, then:
 
@@ -113,7 +143,7 @@ ros2 launch src/velodyne_slam_launch.py
 
 This starts: Velodyne driver → PointCloud → LaserScan → Odometry → SLAM → RViz
 
-### Run Vision (Combined QR + HAZMAT)
+### 👁️ Run Vision (Combined QR + HAZMAT)
 
 Start the UDP stream from the Raspberry Pi, then:
 
@@ -162,6 +192,7 @@ This repo uses git submodules for third-party ROS2 packages:
 |-----------|--------|--------|
 | `ros2_ws/src/velodyne` | [ros-drivers/velodyne](https://github.com/ros-drivers/velodyne) | `ros2` |
 | `ros2_ws/src/rf2o_laser_odometry` | [MAPIRlab/rf2o_laser_odometry](https://github.com/MAPIRlab/rf2o_laser_odometry) | `ros2` |
+| `ros2_ws/src/go2_ros2_sdk` | [abizovnuralem/go2_ros2_sdk](https://github.com/abizovnuralem/go2_ros2_sdk) | `master` |
 
 ---
 

@@ -6,3 +6,6 @@
 	path = ros2_ws/src/rf2o_laser_odometry
 	url = https://github.com/MAPIRlab/rf2o_laser_odometry.git
 	branch = ros2
+[submodule "ros2_ws/src/go2_ros2_sdk"]
+	path = ros2_ws/src/go2_ros2_sdk
+	url = https://github.com/abizovnuralem/go2_ros2_sdk.git
