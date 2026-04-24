@@ -25,7 +25,8 @@ setup(
     entry_points={
         'console_scripts': [
             'robocup_mapper = urubots_vision.robocup_mapper:main',
-            'vision_detector = urubots_vision.vision_detector:main'
+            'vision_detector = urubots_vision.vision_detector:main',
+            'geotiff_mapper = urubots_vision.geotiff_mapper:main'
         ],
     },
 )
