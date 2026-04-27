@@ -103,39 +103,49 @@ class GeoTiffMapper(Node):
         # Pixels per meter
         ppm = int(1.0 / res) if res > 0 else 20
         
+        # Garantizar un tamaño mínimo (ej. 1200x1200 píxeles, ~60 metros) para que los textos no se pisen
+        W = max(w, 1200)
+        H = max(h, 1200)
+        offset_x = (W - w) // 2
+        offset_y = (H - h) // 2
+
         # Regla: Unexplored Checkerboard 100cm (1 metro) = ppm píxeles
-        img = np.zeros((h, w, 3), dtype=np.uint8)
+        img = np.zeros((H, W, 3), dtype=np.uint8)
         c1 = (227, 226, 226) # Light Grey (BGR)
         c2 = (238, 237, 237) # Dark Grey (BGR)
-        for i in range(0, w, ppm):
-            for j in range(0, h, ppm):
+        for i in range(0, W, ppm):
+            for j in range(0, H, ppm):
                 color = c1 if ((i//ppm) + (j//ppm)) % 2 == 0 else c2
                 cv2.rectangle(img, (i, j), (i+ppm, j+ppm), color, -1)
                 
         # Procesar Occupancy Grid
         data = np.array(self.latest_map.data).reshape((h, w))
         
-        # Regla: Muros Dark Blue (0, 40, 120) -> en BGR (120, 40, 0)
-        # Regla: Espacio explorado Gradient White (128->255)
-        # Ocupado = 100, Libre = 0, Desconocido = -1
-        
-        # Máscara explorada
+        # Máscaras
         explored_mask = data >= 0
         walls_mask = data > 50
         free_mask = (data >= 0) & (data <= 50)
         
-        # Pintar celdas libres de blanco (asumiendo 100% confidence)
-        img[free_mask] = (255, 255, 255)
+        # Crear capa del SLAM
+        img_slam = np.zeros((h, w, 3), dtype=np.uint8)
+        img_slam[free_mask] = (255, 255, 255)
         
         # Dibujar grilla negra fina (50cm) sobre área explorada
         grid_50 = ppm // 2
         for i in range(0, w, grid_50):
-            img[:, i] = np.where(explored_mask[:, i, np.newaxis], (191, 190, 190), img[:, i])
+            img_slam[:, i] = np.where(explored_mask[:, i, np.newaxis], (191, 190, 190), img_slam[:, i])
         for j in range(0, h, grid_50):
-            img[j, :] = np.where(explored_mask[j, :, np.newaxis], (191, 190, 190), img[j, :])
+            img_slam[j, :] = np.where(explored_mask[j, :, np.newaxis], (191, 190, 190), img_slam[j, :])
             
         # Pintar muros
-        img[walls_mask] = (120, 40, 0)
+        img_slam[walls_mask] = (120, 40, 0)
+        
+        # Superponer el SLAM explorado en el centro del mapa grande
+        img[offset_y:offset_y+h, offset_x:offset_x+w] = np.where(
+            explored_mask[:,:,np.newaxis], 
+            img_slam, 
+            img[offset_y:offset_y+h, offset_x:offset_x+w]
+        )
         
         # Offset del mapa (para proyectar coordenadas métricas a píxeles)
         # La orientación en ROS es +X a la derecha, +Y arriba (dependiendo del marco).
@@ -153,8 +163,8 @@ class GeoTiffMapper(Node):
             
             px = int((wx_orig - origin_x) / res)
             py = int((wy_orig - origin_y) / res)
-            # Invertir Y porque en la imagen Y crece hacia abajo
-            return (px, h - py)
+            # Invertir Y porque en la imagen Y crece hacia abajo, y aplicar offset
+            return (px + offset_x, offset_y + h - py)
             
         # Regla: Robot Path Magenta (120, 0, 140) -> BGR (140, 0, 120), grosor 2cm
         path_thick = max(1, int(0.02 * ppm))
@@ -195,8 +205,8 @@ class GeoTiffMapper(Node):
         
         cv2.putText(img, filename, (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (207, 44, 0), 2) # BGR
         
-        # Regla: Escala de 1 metro y Orientación
-        scale_x = w - ppm - 20
+        # Regla: Escala de 1 metro y Orientación (se colocan relativas al nuevo ancho W)
+        scale_x = W - ppm - 20
         scale_y = 40
         cv2.line(img, (scale_x, scale_y), (scale_x + ppm, scale_y), (140, 50, 0), 3)
         cv2.putText(img, "1 METER", (scale_x, scale_y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (140, 50, 0), 2)
