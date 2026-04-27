@@ -230,7 +230,7 @@ class VisionDetector(Node):
             results = self.hazmat_model(cv_img, verbose=False)
             for r in results:
                 for box in r.boxes:
-                    if box.conf[0] > 0.4:
+                    if box.conf[0] > 0.6:
                         b = box.xyxy[0].cpu().numpy()
                         cls = int(box.cls[0])
                         name = self.hazmat_model.names[cls]
