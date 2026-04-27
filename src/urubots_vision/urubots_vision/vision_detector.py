@@ -201,7 +201,19 @@ class VisionDetector(Node):
 
 
     def image_callback(self, msg):
-        cv_img = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
+        if not hasattr(self, 'first_image_received'):
+            self.get_logger().info("📸 ¡Primera imagen de la cámara del perro RECIBIDA con éxito!")
+            self.first_image_received = True
+
+        if self.latest_cloud is None:
+            # Si aún no tenemos LiDAR, no procesamos visión para no gastar CPU en vano
+            return
+
+        try:
+            cv_img = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
+        except Exception as e:
+            self.get_logger().error(f"Error decodificando imagen: {e}")
+            return
         gray_img = cv2.cvtColor(cv_img, cv2.COLOR_BGR2GRAY)
         
         # 1. Detectar AprilTags
