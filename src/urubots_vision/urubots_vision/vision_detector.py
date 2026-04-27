@@ -70,8 +70,8 @@ class VisionDetector(Node):
         self.tf_listener = TransformListener(self.tf_buffer, self)
         
         from rclpy.qos import qos_profile_sensor_data
-        self.create_subscription(Image, '/go2_camera/color/image', self.image_callback, qos_profile_sensor_data)
-        self.create_subscription(CameraInfo, '/go2_camera/color/camera_info', self.info_callback, qos_profile_sensor_data)
+        self.create_subscription(Image, '/camera/image_raw', self.image_callback, qos_profile_sensor_data)
+        self.create_subscription(CameraInfo, '/camera/camera_info', self.info_callback, qos_profile_sensor_data)
         self.create_subscription(PointCloud2, '/point_cloud2', self.pc_callback, qos_profile_sensor_data)
         
         self.camera_info = None
