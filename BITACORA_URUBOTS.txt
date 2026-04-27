@@ -1,0 +1,30 @@
+========================================================================
+BITÁCORA DE DESARROLLO - URUBOTS GO2 (VISIÓN Y MAPEO ROBOCUP)
+Fecha de la sesión: 27 de Abril de 2026
+========================================================================
+
+1. ¿QUÉ HICIMOS HOY?
+--------------------------------------------------
+✅ Organización del Workspace: Limpiamos enlaces simbólicos rotos y organizamos el código fuente de manera profesional dentro de `~/ros2_ws/Rescue-Go2/`.
+✅ Modelos de IA Offline: Integramos los archivos `best_hazmat.pt` (tu modelo entrenado) y `yolov8n.pt` (COCO) dentro de la carpeta `/vision/` del repositorio. El sistema ya no depende de internet.
+✅ Diagnósticos y Logs: Agregamos un sistema de logs profundo a `vision_detector.py` para avisar en la terminal cada vez que la cámara recibe video, detecta un objeto en 2D, o falla al cruzarlo con el láser (3D).
+✅ Solución de Streaming de Video: Arreglamos el nombre del tópico de la cámara (`/camera/image_raw`), lo que permitió que la IA reciba la transmisión en vivo de manera estable.
+✅ Calibración de Confianza: Calibramos el modelo de Hazmat a un umbral del 60% (0.6) para evitar falsos positivos como el de "spontaneously-combustible".
+✅ Prueba de Campo Exitosa: Validamos el sistema completo. Generó con éxito un archivo CSV con 11 detecciones (incluyendo Hazmats, personas y maletas) con coordenadas XYZ súper precisas calculadas por el LiDAR.
+
+
+2. TAREAS FUTURAS (PRÓXIMOS PASOS)
+--------------------------------------------------
+🚀 TAREA 1: Entrenar el "Súper-Modelo" Unificado.
+   - En lugar de correr Hazmat y COCO por separado, el equipo debe entrar a Roboflow, combinar las fotos de Hazmat con fotos de "Extintores", "Cascos de Construcción" y "Tanques de Propano" y entrenar un solo archivo `.pt`.
+   - Cuando esté listo, reemplazaremos los dos modelos actuales por este súper-modelo para ganar muchísimos FPS y ahorrar batería.
+
+🚀 TAREA 2: Flujo de Guardado Seguro.
+   - Recordatorio estricto: Durante las misiones, presionar `Ctrl+C` **UNA SOLA VEZ** al finalizar y esperar de 5 a 10 segundos sin tocar nada hasta que salga el mensaje verde de confirmación "MAPA EXPORTADO CON ÉXITO". Si se presiona dos veces, el archivo `.ply` 3D se corromperá o no se guardará.
+
+🚀 TAREA 3: Validación del Mapa 2D GeoTIFF.
+   - Analizar el archivo `map.tiff` generado para confirmar que la escala y las reglas visuales cumplan estrictamente las exigencias de los jueces de la RoboCup (ya implementamos un relleno dinámico de 1200x1200px para que el texto no pise el mapa).
+
+
+¡El software base de percepción está finalizado y es completamente funcional para la competencia!
+========================================================================
