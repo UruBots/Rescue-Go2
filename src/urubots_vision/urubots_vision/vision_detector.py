@@ -122,6 +122,7 @@ class VisionDetector(Node):
                 rclpy.time.Time()
             )
         except Exception as e:
+            self.get_logger().warn(f"⚠️ [TF] Transformación fallida para {name}: {str(e)}")
             return
 
         # Extraer puntos del lidar
@@ -195,6 +196,8 @@ class VisionDetector(Node):
                 })
                 self.get_logger().info(f"✅ DETECCIÓN {self.detection_id}: {name} en X:{final_x:.2f} Y:{final_y:.2f} Z:{final_z:.2f}")
                 self.detection_id += 1
+        else:
+            self.get_logger().warn(f"⚠️ [3D] {name} visto en cámara, pero el Láser no encontró puntos en esa caja (¿Muy cerca?).")
 
 
     def image_callback(self, msg):
@@ -219,6 +222,7 @@ class VisionDetector(Node):
                         b = box.xyxy[0].cpu().numpy()
                         cls = int(box.cls[0])
                         name = self.hazmat_model.names[cls]
+                        self.get_logger().info(f"🔎 [2D] Hazmat visto por la cámara: {name} (Confianza: {box.conf[0]*100:.1f}%)")
                         self.register_detection('hazmat_sign', name, b)
                         
         # 3. Detectar COCO (Objetos Reales)
