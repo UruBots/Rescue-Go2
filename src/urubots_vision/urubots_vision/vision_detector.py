@@ -62,8 +62,8 @@ class VisionDetector(Node):
             self.get_logger().error(f"❌ No se encontró {coco_path}")
             self.coco_model = None
         
-        # AprilTag (RoboCup usa tagStandard41h12 o tag36h11)
-        self.at_detector = Detector(families='tagStandard41h12,tag36h11')
+        # AprilTag (pupil_apriltags soporta tag36h11 nativamente)
+        self.at_detector = Detector(families='tag36h11')
         
         # TF y Topics
         self.tf_buffer = Buffer()
