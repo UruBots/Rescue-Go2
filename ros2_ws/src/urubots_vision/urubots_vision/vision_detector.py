@@ -54,8 +54,13 @@ class VisionDetector(Node):
             self.hazmat_model = None
             
         # YOLO COCO nativo para mochilas, extintores, etc.
-        self.coco_model = YOLO('yolov8n.pt') 
-        self.get_logger().info("✅ Modelo COCO cargado.")
+        coco_path = os.path.expanduser('~/ros2_ws/Rescue-Go2/vision/yolov8n.pt')
+        if os.path.exists(coco_path):
+            self.coco_model = YOLO(coco_path)
+            self.get_logger().info("✅ Modelo COCO cargado.")
+        else:
+            self.get_logger().error(f"❌ No se encontró {coco_path}")
+            self.coco_model = None
         
         # AprilTag (RoboCup usa tagStandard41h12 o tag36h11)
         self.at_detector = Detector(families='tagStandard41h12,tag36h11')
@@ -217,16 +222,17 @@ class VisionDetector(Node):
                         self.register_detection('hazmat_sign', name, b)
                         
         # 3. Detectar COCO (Objetos Reales)
-        coco_results = self.coco_model(cv_img, verbose=False)
-        target_classes = ['backpack', 'fire hydrant', 'person', 'suitcase'] # Equivalentes de robocup
-        for r in coco_results:
-            for box in r.boxes:
-                if box.conf[0] > 0.5:
-                    b = box.xyxy[0].cpu().numpy()
-                    cls = int(box.cls[0])
-                    name = self.coco_model.names[cls]
-                    if name in target_classes:
-                        self.register_detection('real_object', name, b)
+        if self.coco_model:
+            coco_results = self.coco_model(cv_img, verbose=False)
+            target_classes = ['backpack', 'fire hydrant', 'person', 'suitcase'] # Equivalentes de robocup
+            for r in coco_results:
+                for box in r.boxes:
+                    if box.conf[0] > 0.5:
+                        b = box.xyxy[0].cpu().numpy()
+                        cls = int(box.cls[0])
+                        name = self.coco_model.names[cls]
+                        if name in target_classes:
+                            self.register_detection('real_object', name, b)
 
     def save_csv(self):
         time_str = self.start_time.strftime("%H-%M-%S")
