@@ -40,55 +40,59 @@ class GeoTiffMapper(Node):
 
     def track_path(self):
         try:
-            # Obtener la posición del robot respecto al origen (odom)
+            # Obtener la posicion del robot respecto al origen (odom)
             t = self.tf_buffer.lookup_transform('odom', 'base_link', rclpy.time.Time())
             x = t.transform.translation.x
             y = t.transform.translation.y
-            
-            # Rotar 90 grados a +Y para coincidir con la orientación de RoboCup
-            import math
-            x_rot = x * math.cos(math.pi/2) - y * math.sin(math.pi/2)
-            y_rot = x * math.sin(math.pi/2) + y * math.cos(math.pi/2)
-            y_rot = y_rot - 0.35 # Offset frontal del robot
-            
-            self.robot_path.append((x_rot, y_rot))
+            self.robot_path.append((x, y))
         except (LookupException, ConnectivityException, ExtrapolationException):
             pass
 
     def draw_marker(self, img, x_px, y_px, type_name, label, ppm):
-        # Tamaños en pixeles
-        diam_35 = int(0.35 * ppm)
-        diam_30 = int(0.30 * ppm)
+        # Tamanos fijos en pixeles para que sean visibles
+        marker_size = max(20, int(0.35 * ppm))
+        half = marker_size // 2
         
         if type_name == 'ar_code':
             # Circulo Amarillo 255,200,0
-            cv2.circle(img, (x_px, y_px), diam_35//2, (0, 200, 255), -1)
+            cv2.circle(img, (x_px, y_px), half, (0, 200, 255), -1)
+            cv2.circle(img, (x_px, y_px), half, (0, 0, 0), 2)
             text = f"#{label}"
         elif type_name == 'hazmat_sign':
             # Rombo Naranja 255,100,30
             pts = np.array([
-                [x_px, y_px - diam_30//2], [x_px + diam_30//2, y_px],
-                [x_px, y_px + diam_30//2], [x_px - diam_30//2, y_px]
+                [x_px, y_px - half], [x_px + half, y_px],
+                [x_px, y_px + half], [x_px - half, y_px]
             ], np.int32)
             cv2.fillPoly(img, [pts], (30, 100, 255))
+            cv2.polylines(img, [pts], True, (0, 0, 0), 2)
             text = label[:2].upper()
-        else: # real_object
+        else:  # real_object
             # Rombo Rojo 240,10,10
             pts = np.array([
-                [x_px, y_px - diam_30//2], [x_px + diam_30//2, y_px],
-                [x_px, y_px + diam_30//2], [x_px - diam_30//2, y_px]
+                [x_px, y_px - half], [x_px + half, y_px],
+                [x_px, y_px + half], [x_px - half, y_px]
             ], np.int32)
             cv2.fillPoly(img, [pts], (10, 10, 240))
+            cv2.polylines(img, [pts], True, (0, 0, 0), 2)
             text = label[:2].upper()
             
-        # Dibujar texto
+        # Dibujar texto dentro del marcador
         font = cv2.FONT_HERSHEY_SIMPLEX
-        font_scale = 0.5
-        thickness = 1
+        font_scale = max(0.5, marker_size / 40.0)
+        thickness = max(1, int(font_scale * 2))
         size = cv2.getTextSize(text, font, font_scale, thickness)[0]
-        tx = x_px - size[0]//2
-        ty = y_px + size[1]//2
+        tx = x_px - size[0] // 2
+        ty = y_px + size[1] // 2
         cv2.putText(img, text, (tx, ty), font, font_scale, (255, 255, 255), thickness)
+        
+        # Dibujar nombre completo debajo del marcador
+        name_scale = max(0.4, marker_size / 50.0)
+        name_thick = max(1, int(name_scale * 2))
+        name_size = cv2.getTextSize(label, font, name_scale, name_thick)[0]
+        nx = x_px - name_size[0] // 2
+        ny = y_px + half + name_size[1] + 5
+        cv2.putText(img, label, (nx, ny), font, name_scale, (0, 0, 0), name_thick)
 
     def save_geotiff(self):
         self.get_logger().info("🎨 Dibujando Mapa GeoTIFF (Reglas RoboCup)...")
@@ -154,15 +158,9 @@ class GeoTiffMapper(Node):
         origin_y = self.latest_map.info.origin.position.y
         
         def world_to_px(wx, wy):
-            # wx, wy ya vienen en sistema rotado (+Y al frente)
-            # Deshacemos rotación para empatar con el map original de SLAM
-            import math
-            wx_orig = wx * math.cos(-math.pi/2) - wy * math.sin(-math.pi/2)
-            wy_orig = wx * math.sin(-math.pi/2) + wy * math.cos(-math.pi/2)
-            wy_orig = wy_orig + 0.35
-            
-            px = int((wx_orig - origin_x) / res)
-            py = int((wy_orig - origin_y) / res)
+            # Convertir coordenadas odom directamente a pixeles del mapa SLAM
+            px = int((wx - origin_x) / res)
+            py = int((wy - origin_y) / res)
             # Invertir Y porque en la imagen Y crece hacia abajo, y aplicar offset
             return (px + offset_x, offset_y + h - py)
             
@@ -179,7 +177,7 @@ class GeoTiffMapper(Node):
             cv2.arrowedLine(img, (start_px[0], start_px[1] + int(0.5*ppm)), start_px, (0, 240, 0), max(2, int(0.05*ppm)), tipLength=0.3)
             
         # Dibujar POIs desde CSV
-        csv_files = glob.glob(os.path.expanduser(f"~/ros2_ws/RoboCup*{self.mission}*pois.csv"))
+        csv_files = glob.glob(os.path.expanduser(f"~/ros2_ws/Rescue-Go2/mapas/RoboCup*{self.mission}*pois.csv"))
         if csv_files:
             latest_csv = max(csv_files, key=os.path.getctime)
             with open(latest_csv, 'r') as f:
@@ -217,7 +215,9 @@ class GeoTiffMapper(Node):
         cv2.putText(img, "Y", (scale_x - int(0.5*ppm) - 20, scale_y + 45), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (140, 50, 0), 2)
 
         # Guardar archivo
-        full_path = os.path.expanduser(f"~/ros2_ws/{filename}")
+        mapas_dir = os.path.expanduser('~/ros2_ws/Rescue-Go2/mapas')
+        os.makedirs(mapas_dir, exist_ok=True)
+        full_path = os.path.join(mapas_dir, filename)
         cv2.imwrite(full_path, img)
         self.get_logger().info(f"✅ MAPA 2D GEOTIFF CREADO: {full_path}")
 

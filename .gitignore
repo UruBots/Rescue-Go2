@@ -47,3 +47,5 @@ tts_cache/
 capturas/
 *.bag
 *.db3
+mapas/.~lock.*
+mapas/*.ply

@@ -207,7 +207,9 @@ class RoboCupMapper(Node):
         
         time_str = self.start_time.strftime("%H-%M-%S")
         year = self.start_time.strftime("%Y")
-        filename = os.path.expanduser(f"~/ros2_ws/RoboCup{year}-{self.team}-{self.mission}-{time_str}-map.ply")
+        mapas_dir = os.path.expanduser('~/ros2_ws/Rescue-Go2/mapas')
+        os.makedirs(mapas_dir, exist_ok=True)
+        filename = os.path.join(mapas_dir, f"RoboCup{year}-{self.team}-{self.mission}-{time_str}-map.ply")
         
         # Generar archivo estrictamente ASCII PLY como lo dictan los jueces
         with open(filename, 'w') as f:

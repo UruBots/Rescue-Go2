@@ -44,23 +44,14 @@ class VisionDetector(Node):
         self.bridge = CvBridge()
         self.get_logger().info("Cargando Modelos de IA...")
         
-        # YOLO para Hazmat
-        hazmat_path = os.path.expanduser('~/ros2_ws/Rescue-Go2/vision/best_hazmat.pt')
-        if os.path.exists(hazmat_path):
-            self.hazmat_model = YOLO(hazmat_path)
-            self.get_logger().info("✅ Modelo HAZMAT cargado.")
+        # YOLO Unificado para Hazmat y Objetos Reales
+        unified_path = os.path.expanduser('~/ros2_ws/Rescue-Go2/vision/best_all.pt')
+        if os.path.exists(unified_path):
+            self.unified_model = YOLO(unified_path)
+            self.get_logger().info("✅ Súper-Modelo UNIFICADO (best_all) cargado.")
         else:
-            self.get_logger().error("❌ No se encontró best_hazmat.pt")
-            self.hazmat_model = None
-            
-        # YOLO COCO nativo para mochilas, extintores, etc.
-        coco_path = os.path.expanduser('~/ros2_ws/Rescue-Go2/vision/yolov8n.pt')
-        if os.path.exists(coco_path):
-            self.coco_model = YOLO(coco_path)
-            self.get_logger().info("✅ Modelo COCO cargado.")
-        else:
-            self.get_logger().error(f"❌ No se encontró {coco_path}")
-            self.coco_model = None
+            self.get_logger().error("❌ No se encontró best_all.pt en la carpeta vision/")
+            self.unified_model = None
         
         # AprilTag (pupil_apriltags soporta tag36h11 nativamente)
         self.at_detector = Detector(families='tag36h11')
@@ -93,8 +84,8 @@ class VisionDetector(Node):
         self.latest_cloud = msg
         self.latest_cloud_frame = msg.header.frame_id
 
-    def is_duplicate(self, name, x, y, z, threshold=1.5):
-        """Evita registrar el mismo objeto varias veces si está a menos de 1.5 metros"""
+    def is_duplicate(self, name, x, y, z, threshold=2.0):
+        """Evita registrar el mismo objeto varias veces si esta a menos de 2 metros"""
         for d in self.detections:
             dx = d['x'] - x
             dy = d['y'] - y
@@ -169,17 +160,11 @@ class VisionDetector(Node):
             
             x_odom, y_odom, z_odom = world_pt[0], world_pt[1], world_pt[2]
             
-            # REGLA ROBOCUP: Aplicar las MISMAS rotaciones y traslaciones del Mapa 3D
-            # Rotar 90 grados a +Y
-            import math
-            x_rot = x_odom * math.cos(math.pi/2) - y_odom * math.sin(math.pi/2)
-            y_rot = x_odom * math.sin(math.pi/2) + y_odom * math.cos(math.pi/2)
-            
-            # Ojo: No tenemos floor_z aquí dinámicamente como en el final_pcd de mapper,
-            # pero asumimos -0.3m que es la altura estándar.
-            final_x = x_rot
-            final_y = y_rot - 0.35
-            final_z = z_odom + 0.3
+            # Guardar coordenadas en odom puro (sin rotar)
+            # El GeoTIFF aplicará la misma transformación que usa para el path
+            final_x = x_odom
+            final_y = y_odom
+            final_z = z_odom
             
             if not self.is_duplicate(name, final_x, final_y, final_z):
                 time_str = datetime.datetime.now().strftime("%H:%M:%S")
@@ -225,36 +210,38 @@ class VisionDetector(Node):
                 bbox = [min(tag.corners[:,0]), min(tag.corners[:,1]), max(tag.corners[:,0]), max(tag.corners[:,1])]
                 self.register_detection('ar_code', str(tag.tag_id), bbox)
                 
-        # 2. Detectar Hazmat
-        if self.hazmat_model:
-            results = self.hazmat_model(cv_img, verbose=False)
+        # 2. Detectar Hazmats y Objetos Reales (Modelo Unificado)
+        if self.unified_model:
+            results = self.unified_model(cv_img, verbose=False)
+            
+            # Lista de clases que consideramos "Objetos Reales" segun el reglamento
+            # Nombres exactos del modelo best_all.pt: Backpack, baby face, babyface, fire_extinguisher, gas tank, helmet
+            real_object_classes = ['backpack', 'baby face', 'babyface', 'fire_extinguisher', 'gas tank', 'helmet', 'person', 'suitcase']
+            
             for r in results:
-                for box in r.boxes:
-                    if box.conf[0] > 0.6:
-                        b = box.xyxy[0].cpu().numpy()
-                        cls = int(box.cls[0])
-                        name = self.hazmat_model.names[cls]
-                        self.get_logger().info(f"🔎 [2D] Hazmat visto por la cámara: {name} (Confianza: {box.conf[0]*100:.1f}%)")
-                        self.register_detection('hazmat_sign', name, b)
-                        
-        # 3. Detectar COCO (Objetos Reales)
-        if self.coco_model:
-            coco_results = self.coco_model(cv_img, verbose=False)
-            target_classes = ['backpack', 'fire hydrant', 'person', 'suitcase'] # Equivalentes de robocup
-            for r in coco_results:
                 for box in r.boxes:
                     if box.conf[0] > 0.5:
                         b = box.xyxy[0].cpu().numpy()
                         cls = int(box.cls[0])
-                        name = self.coco_model.names[cls]
-                        if name in target_classes:
-                            self.register_detection('real_object', name, b)
+                        name = self.unified_model.names[cls].lower()
+                        
+                        # Determinar tipo de objeto para el CSV de RoboCup
+                        if any(ro in name for ro in real_object_classes):
+                            det_type = 'real_object'
+                            self.get_logger().info(f"🔎 [2D] Objeto Real visto: {name} (Confianza: {box.conf[0]*100:.1f}%)")
+                        else:
+                            det_type = 'hazmat_sign'
+                            self.get_logger().info(f"🔎 [2D] Hazmat visto: {name} (Confianza: {box.conf[0]*100:.1f}%)")
+                            
+                        self.register_detection(det_type, name, b)
 
     def save_csv(self):
         time_str = self.start_time.strftime("%H-%M-%S")
         date_str = self.start_time.strftime("%Y-%m-%d")
         year = self.start_time.strftime("%Y")
-        filename = os.path.expanduser(f"~/ros2_ws/RoboCup{year}-{self.team}-{self.mission}-{time_str}-pois.csv")
+        mapas_dir = os.path.expanduser('~/ros2_ws/Rescue-Go2/mapas')
+        os.makedirs(mapas_dir, exist_ok=True)
+        filename = os.path.join(mapas_dir, f"RoboCup{year}-{self.team}-{self.mission}-{time_str}-pois.csv")
         
         with open(filename, 'w', newline='') as f:
             f.write('"pois"\n')
