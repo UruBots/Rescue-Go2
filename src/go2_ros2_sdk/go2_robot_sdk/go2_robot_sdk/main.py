@@ -119,7 +119,8 @@ async def main_async():
         except Exception as e:
             print(f"Error during cleanup: {e}")
         finally:
-            rclpy.shutdown()
+            if rclpy.ok():
+                rclpy.shutdown()
 
 
 def main():

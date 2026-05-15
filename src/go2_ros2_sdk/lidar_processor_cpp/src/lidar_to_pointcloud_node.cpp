@@ -17,6 +17,12 @@ void PointCloudAggregator::addPoints(const std::vector<Point3D>& new_points)
 {
   std::lock_guard<std::mutex> lock(points_mutex_);
   
+  // FIX: Clear points before inserting to prevent temporal smearing without TF
+  // The map saving might want all points, but publishing them back to SLAM destroys the map.
+  // Actually, we must separate map saving from publishing.
+  // For publishing, we only want the current scan.
+  points_.clear();
+
   for (const auto& point : new_points) {
     // Round points to reduce memory usage
     Point3D rounded_point(

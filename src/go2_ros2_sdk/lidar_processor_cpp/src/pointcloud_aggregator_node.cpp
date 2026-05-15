@@ -128,8 +128,9 @@ void PointCloudAggregatorNode::pointcloudCallback(const sensor_msgs::msg::PointC
       std::lock_guard<std::mutex> lock(clouds_mutex_);
       aggregated_clouds_.push_back(filtered_cloud);
       
-      // Keep only recent data (last 10 seconds worth)
-      size_t max_clouds = static_cast<size_t>(config_.publish_rate * 10);
+      // FIX: Never aggregate over time without TF, just keep the latest frame (1 cloud)
+      // Otherwise old scans are published in the new base_link frame, causing massive smearing
+      size_t max_clouds = 1;
       if (aggregated_clouds_.size() > max_clouds) {
         aggregated_clouds_.erase(
           aggregated_clouds_.begin(),

@@ -40,7 +40,6 @@ class GeoTiffMapper(Node):
 
     def track_path(self):
         try:
-            # Obtener la posicion del robot respecto al origen (odom)
             t = self.tf_buffer.lookup_transform('odom', 'base_link', rclpy.time.Time())
             x = t.transform.translation.x
             y = t.transform.translation.y
@@ -153,16 +152,17 @@ class GeoTiffMapper(Node):
         
         # Offset del mapa (para proyectar coordenadas métricas a píxeles)
         # La orientación en ROS es +X a la derecha, +Y arriba (dependiendo del marco).
-        # En el mapa 2D, el origin está en la esquina inferior izquierda.
         origin_x = self.latest_map.info.origin.position.x
         origin_y = self.latest_map.info.origin.position.y
         
         def world_to_px(wx, wy):
-            # Convertir coordenadas odom directamente a pixeles del mapa SLAM
+            # El OccupancyGrid se dibuja con data.reshape((h,w)) sin invertir:
+            #   img[offset_y + row, offset_x + col] = mundo(origin_x + col*res, origin_y + row*res)
+            # Por lo tanto: col = (wx - origin_x)/res, row = (wy - origin_y)/res
+            # NO se invierte Y.
             px = int((wx - origin_x) / res)
             py = int((wy - origin_y) / res)
-            # Invertir Y porque en la imagen Y crece hacia abajo, y aplicar offset
-            return (px + offset_x, offset_y + h - py)
+            return (offset_x + px, offset_y + py)
             
         # Regla: Robot Path Magenta (120, 0, 140) -> BGR (140, 0, 120), grosor 2cm
         path_thick = max(1, int(0.02 * ppm))
@@ -231,7 +231,8 @@ def main(args=None):
         node.save_geotiff()
     finally:
         node.destroy_node()
-        rclpy.shutdown()
+        if rclpy.ok():
+            rclpy.shutdown()
 
 if __name__ == '__main__':
     main()

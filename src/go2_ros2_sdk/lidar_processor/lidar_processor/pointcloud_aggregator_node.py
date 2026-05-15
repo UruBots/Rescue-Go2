@@ -162,8 +162,8 @@ class PointCloudAggregatorNode(Node):
             if len(filtered_points) > 0:
                 self.aggregated_points.append(filtered_points)
                 
-                # Keep only recent data (last 10 seconds worth)
-                max_clouds = int(self.config.publish_rate * 10)
+                # Keep only the latest frame to prevent temporal smearing in base_link without TF
+                max_clouds = 1
                 if len(self.aggregated_points) > max_clouds:
                     self.aggregated_points = self.aggregated_points[-max_clouds:]
             
