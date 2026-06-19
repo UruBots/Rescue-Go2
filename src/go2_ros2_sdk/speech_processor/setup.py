@@ -26,6 +26,7 @@ setup(
             'tts_node = speech_processor.tts_node:main',
             'speech_synthesizer = speech_processor.speech_synthesizer_node:main',
             'audio_manager = speech_processor.audio_manager_node:main',
+            'audio_acuity_gui = speech_processor.audio_acuity_gui:main',
         ],
     },
 ) 

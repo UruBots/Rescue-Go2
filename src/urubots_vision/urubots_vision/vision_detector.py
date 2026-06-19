@@ -74,6 +74,12 @@ class VisionDetector(Node):
         self.detection_id = 1
         self.start_time = datetime.datetime.now()
         
+        # Motion detection and tracking (RoboCup Section C)
+        self.image_pub = self.create_publisher(Image, '/vision/motion_detection/image', 10)
+        self.prev_gray = None
+        self.trail_points = []
+        self.centroid_history = []
+
         self.get_logger().info("==================================================")
         self.get_logger().info("👁️ Visión Activa. Buscando Hazmat, AprilTags y Objetos.")
         self.get_logger().info("==================================================")
@@ -85,8 +91,8 @@ class VisionDetector(Node):
         self.latest_cloud = msg
         self.latest_cloud_frame = msg.header.frame_id
 
-    def is_duplicate(self, name, x, y, z, threshold=1.0):
-        """Evita registrar el mismo objeto varias veces si esta a menos de 1 metro"""
+    def is_duplicate(self, name, x, y, z, threshold=2.5):
+        """Evita registrar el mismo objeto varias veces si esta a menos de 2.5 metros"""
         for d in self.detections:
             dx = d['x'] - x
             dy = d['y'] - y
@@ -211,7 +217,7 @@ class VisionDetector(Node):
                     self._pending_hits = [h for h in self._pending_hits if (now - h[0]).total_seconds() < 5.0]
                     
                     # Buscar hits similares recientes
-                    hits_similares = [h for h in self._pending_hits if h[1] == name and np.sqrt((h[2]-x_odom)**2 + (h[3]-y_odom)**2) < 1.0]
+                    hits_similares = [h for h in self._pending_hits if h[1] == name and np.sqrt((h[2]-x_odom)**2 + (h[3]-y_odom)**2) < 2.5]
                     
                     if len(hits_similares) < 2:  # Necesitamos 2 anteriores + 1 actual = 3
                         self._pending_hits.append((now, name, x_odom, y_odom))
@@ -219,7 +225,7 @@ class VisionDetector(Node):
                     
                     # Si llegamos aca, tenemos 3 hits confirmados! 
                     # Limpiamos los hits de este objeto para no volver a activarlo al instante
-                    self._pending_hits = [h for h in self._pending_hits if not (h[1] == name and np.sqrt((h[2]-x_odom)**2 + (h[3]-y_odom)**2) < 1.0)]
+                    self._pending_hits = [h for h in self._pending_hits if not (h[1] == name and np.sqrt((h[2]-x_odom)**2 + (h[3]-y_odom)**2) < 2.5)]
                 
                 time_str = datetime.datetime.now().strftime("%H:%M:%S")
                 self.detections.append({
@@ -249,14 +255,127 @@ class VisionDetector(Node):
         if self.image_count % 150 == 0:  # Cada ~10 segundos a 15fps
             self.get_logger().info("🔄 Recibiendo y procesando stream de video...")
 
-        if self.latest_cloud is None:
-            # Si aún no tenemos LiDAR, no procesamos visión para no gastar CPU en vano
-            return
-
         try:
             cv_img = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
         except Exception as e:
             self.get_logger().error(f"Error decodificando imagen: {e}")
+            return
+
+        # ==========================================
+        # 3. Motion Detection and Target Tracking (RoboCup Section C)
+        # ==========================================
+        gray = cv2.cvtColor(cv_img, cv2.COLOR_BGR2GRAY)
+        gray = cv2.GaussianBlur(gray, (9, 9), 0)
+        
+        annotated_img = cv_img.copy()
+        target_contour = None
+        
+        if self.prev_gray is not None:
+            frame_diff = cv2.absdiff(self.prev_gray, gray)
+            _, thresh = cv2.threshold(frame_diff, 10, 255, cv2.THRESH_BINARY)
+            thresh = cv2.dilate(thresh, None, iterations=2)
+            
+            contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            
+            # Find the largest moving contour (excluding too small or huge frames)
+            max_area = 0
+            for c in contours:
+                area = cv2.contourArea(c)
+                if area > max_area and 200 < area < (cv_img.shape[0] * cv_img.shape[1] * 0.5):
+                    max_area = area
+                    target_contour = c
+            
+            if target_contour is not None:
+                (x, y, w, h) = cv2.boundingRect(target_contour)
+                cx = x + w // 2
+                cy = y + h // 2
+                
+                # Smooth box coordinates using history
+                self.centroid_history.append((x, y, w, h, cx, cy))
+                if len(self.centroid_history) > 5:
+                    self.centroid_history.pop(0)
+                
+                avg_x = int(sum(pt[0] for pt in self.centroid_history) / len(self.centroid_history))
+                avg_y = int(sum(pt[1] for pt in self.centroid_history) / len(self.centroid_history))
+                avg_w = int(sum(pt[2] for pt in self.centroid_history) / len(self.centroid_history))
+                avg_h = int(sum(pt[3] for pt in self.centroid_history) / len(self.centroid_history))
+                avg_cx = int(sum(pt[4] for pt in self.centroid_history) / len(self.centroid_history))
+                avg_cy = int(sum(pt[5] for pt in self.centroid_history) / len(self.centroid_history))
+                
+                # Robust rotation-invariant shape classification using minimum area bounding box
+                area = cv2.contourArea(target_contour)
+                rect = cv2.minAreaRect(target_contour)
+                (box_w, box_h) = rect[1]
+                rect_area = box_w * box_h
+                extent_rotated = float(area) / rect_area if rect_area > 0 else 0
+                
+                # Secondary feature: vertex count
+                peri = cv2.arcLength(target_contour, True)
+                approx = cv2.approxPolyDP(target_contour, 0.04 * peri, True)
+                vertices = len(approx)
+                
+                if extent_rotated < 0.65 or vertices == 3:
+                    shape_name = "TRIANGLE"
+                    color = (255, 180, 0) # Sky Blue
+                elif extent_rotated >= 0.83 or vertices == 4:
+                    side_ratio = max(box_w, box_h) / min(box_w, box_h) if min(box_w, box_h) > 0 else 1.0
+                    if side_ratio < 1.2:
+                        shape_name = "SQUARE"
+                        color = (0, 255, 0) # Green
+                    else:
+                        shape_name = "RECTANGLE"
+                        color = (0, 255, 255) # Yellow
+                else:
+                    shape_name = "CIRCLE"
+                    color = (0, 165, 255) # Orange
+                
+                # Draw bounding box and centroid
+                cv2.rectangle(annotated_img, (avg_x, avg_y), (avg_x + avg_w, avg_y + avg_h), color, 2)
+                cv2.circle(annotated_img, (avg_cx, avg_cy), 5, (0, 0, 255), -1)
+                
+                # Update trail
+                self.trail_points.append((avg_cx, avg_cy))
+                if len(self.trail_points) > 120:
+                    self.trail_points.pop(0)
+                    
+                cv2.putText(annotated_img, f"{shape_name} DETECTED", (avg_x, avg_y - 10), 
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
+            
+            # Draw tracking trail history
+            for i in range(1, len(self.trail_points)):
+                cv2.line(annotated_img, self.trail_points[i-1], self.trail_points[i], (0, 242, 254), 2)
+                
+            # Draw premium status HUD overlays
+            cv2.rectangle(annotated_img, (10, 10), (320, 110), (20, 22, 34), -1)
+            cv2.rectangle(annotated_img, (10, 10), (320, 110), (34, 38, 56), 1)
+            
+            cv2.putText(annotated_img, "ROBOCUP MOTION TRACKER", (20, 35), 
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 242, 254), 2)
+            
+            if target_contour is not None:
+                cv2.putText(annotated_img, "STATUS: TRACKING ACTIVE", (20, 60), 
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
+                cv2.putText(annotated_img, f"PATH: {len(self.trail_points)} pts (360 deg tracking)", (20, 80), 
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+                cv2.putText(annotated_img, f"COORDINATES: X={avg_cx} Y={avg_cy}", (20, 100), 
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1)
+            else:
+                cv2.putText(annotated_img, "STATUS: SCANNING FOR MOTION", (20, 60), 
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 165, 255), 1)
+                cv2.putText(annotated_img, "Waiting for rotating target...", (20, 80), 
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (138, 149, 165), 1)
+        
+        self.prev_gray = gray
+        
+        # Publish the annotated frame
+        try:
+            pub_msg = self.bridge.cv2_to_imgmsg(annotated_img, encoding="bgr8")
+            self.image_pub.publish(pub_msg)
+        except Exception as e:
+            self.get_logger().error(f"Error publishing annotated image: {e}")
+
+        if self.latest_cloud is None:
+            # Si aún no tenemos LiDAR, no procesamos el resto de la visión para no gastar CPU en vano
             return
         gray_img = cv2.cvtColor(cv_img, cv2.COLOR_BGR2GRAY)
         
@@ -356,7 +475,7 @@ class VisionDetector(Node):
         filename = os.path.join(mapas_dir, f"RoboCup{year}-{self.team}-{self.mission}-{time_str}-pois.csv")
         
         # Fusionar detecciones cercanas del mismo tipo antes de guardar
-        final_detections = self.cluster_detections(cluster_radius=1.0)
+        final_detections = self.cluster_detections(cluster_radius=2.5)
         self.get_logger().info(f"📊 Detecciones brutas: {len(self.detections)} → tras clustering: {len(final_detections)}")
         
         with open(filename, 'w', newline='') as f:

@@ -4,6 +4,7 @@
 import asyncio
 import logging
 import os
+import subprocess
 from typing import Dict, Any
 
 from aiortc import MediaStreamTrack
@@ -60,6 +61,7 @@ class Go2DriverNode(Node):
             config=self.config,
             on_validated_callback=self._on_robot_validated,
             on_video_frame_callback=self._on_video_frame if self.config.enable_video else None,
+            on_audio_frame_callback=self._on_audio_frame,
             event_loop=self.event_loop
         )
         
@@ -313,6 +315,45 @@ class Go2DriverNode(Node):
             except Exception as e:
                 logger.error(f"Error processing video frame: {e}")
                 break
+
+    async def _on_audio_frame(self, track: MediaStreamTrack, robot_id: str) -> None:
+        """Callback for processing audio frames from the robot microphone"""
+        self.get_logger().info(f"🎤 Audio track received for robot {robot_id}")
+        
+        proc = None
+        try:
+            while True:
+                frame = await track.recv()
+                
+                # Convert the frame to raw PCM bytes
+                pcm_data = frame.to_ndarray(format="s16").tobytes()
+                
+                if proc is None or proc.poll() is not None:
+                    # Determine channels and sample rate
+                    channels = len(frame.layout.channels)
+                    rate = frame.sample_rate
+                    self.get_logger().info(f"🔊 Starting local audio playback: {rate}Hz, {channels} ch")
+                    
+                    # Spawn paplay
+                    proc = subprocess.Popen(
+                        ["paplay", "--raw", f"--rate={rate}", "--format=s16le", f"--channels={channels}"],
+                        stdin=subprocess.PIPE,
+                        stderr=subprocess.DEVNULL
+                    )
+                
+                proc.stdin.write(pcm_data)
+                proc.stdin.flush()
+                await asyncio.sleep(0)
+                
+        except Exception as e:
+            self.get_logger().error(f"Error in audio frame playback loop: {e}")
+        finally:
+            if proc:
+                try:
+                    proc.stdin.close()
+                    proc.terminate()
+                except Exception:
+                    pass
 
     # CycloneDDS callbacks
     def _on_cyclonedds_low_state(self, msg: LowState) -> None:

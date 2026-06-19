@@ -41,6 +41,7 @@ class Go2Connection:
         on_message: Optional[Callable] = None,
         on_open: Optional[Callable] = None,
         on_video_frame: Optional[Callable] = None,
+        on_audio_frame: Optional[Callable] = None,
         decode_lidar: bool = True,
     ):
         self.pc = RTCPeerConnection()
@@ -55,6 +56,7 @@ class Go2Connection:
         self.on_message = on_message
         self.on_open = on_open
         self.on_video_frame = on_video_frame
+        self.on_audio_frame = on_audio_frame
         self.decode_lidar = decode_lidar
         
         # Initialize components
@@ -73,6 +75,9 @@ class Go2Connection:
         # Add video transceiver if video callback provided
         if self.on_video_frame:
             self.pc.addTransceiver("video", direction="recvonly")
+        
+        # Add audio transceiver
+        self.pc.addTransceiver("audio", direction="recvonly")
     
     def on_connection_state_change(self) -> None:
         """Handle peer connection state changes"""
@@ -124,14 +129,19 @@ class Go2Connection:
             logger.error(f"Error processing data channel message: {e}")
     
     async def on_track(self, track: MediaStreamTrack) -> None:
-        """Handle incoming media tracks (video)"""
-        logger.info("Receiving video")
+        """Handle incoming media tracks (video/audio)"""
+        logger.info(f"Received WebRTC track: kind={track.kind}")
         
         if track.kind == "video" and self.on_video_frame:
             try:
                 await self.on_video_frame(track, self.robot_num)
             except Exception as e:
                 logger.error(f"Error in video frame callback: {e}")
+        elif track.kind == "audio" and self.on_audio_frame:
+            try:
+                await self.on_audio_frame(track, self.robot_num)
+            except Exception as e:
+                logger.error(f"Error in audio frame callback: {e}")
     
     def validate_robot_conn(self, message: Dict[str, Any]) -> None:
         """Handle robot validation response"""
@@ -139,6 +149,8 @@ class Go2Connection:
             if message.get("data") == "Validation Ok.":
                 # Turn on video
                 self.publish("", "on", "vid")
+                # Turn on audio
+                self.publish("", "on", "aud")
                 
                 self.validation_result = "SUCCESS"
                 self.robot_validation = "OK"
@@ -209,8 +221,16 @@ class Go2Connection:
             return False
 
     #decrypt RSA key from firmware version >=1.1.8
-    def decrypt_con_notify_data(self, encrypted_b64: str) -> str:
-        key = bytes([232, 86, 130, 189, 22, 84, 155, 0, 142, 4, 166, 104, 43, 179, 235, 227])
+    def decrypt_con_notify_data(self, encrypted_b64: str, data2: int = 2) -> str:
+        import os
+        if data2 == 3:
+            aes_hex = os.environ.get("GO2_AES_KEY")
+            if not aes_hex:
+                raise ValueError("Firmware > 1.1.8 requiere clave AES unica. Exporta GO2_AES_KEY en tu terminal.")
+            key = bytes.fromhex(aes_hex)
+        else:
+            key = bytes([232, 86, 130, 189, 22, 84, 155, 0, 142, 4, 166, 104, 43, 179, 235, 227])
+            
         data = base64.b64decode(encrypted_b64)
         if len(data) < 28:
             raise ValueError("Decryption failed: input data too short")
@@ -258,8 +278,21 @@ class Go2Connection:
                 if not data1:
                     raise Go2ConnectionError("No data1 field in public key response")
 
-                if data2 == 2:
-                    data1 = self.decrypt_con_notify_data(data1)
+                logger.warning(f"[CONN DEBUG] data2={data2!r}, data1 len={len(data1)}")
+
+                # Firmware >=1.1.8 siempre manda la clave encriptada con AES-GCM.
+                # El SDK original solo lo desencriptaba con data2==2, pero en la
+                # practica con firmware moderno data2 puede ser otro valor.
+                # Intentamos siempre desencriptar; si falla (firmware viejo) usamos el texto directo.
+                if data2 in (2, 3):
+                    data1 = self.decrypt_con_notify_data(data1, data2)
+                else:
+                    try:
+                        data1 = self.decrypt_con_notify_data(data1, data2)
+                        logger.warning(f"[CONN DEBUG] AES-GCM decrypt OK (data2={data2!r})")
+                    except Exception as dec_err:
+                        logger.warning(f"[CONN DEBUG] AES-GCM decrypt failed (data2={data2!r}): {dec_err} -> usando data1 sin desencriptar")
+
                 # Extract the public key from 'data1'
                 public_key_pem = data1[10:len(data1)-10]
                 path_ending = PathCalculator.calc_local_path_ending(data1)

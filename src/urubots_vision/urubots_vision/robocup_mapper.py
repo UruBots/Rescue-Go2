@@ -59,6 +59,7 @@ class RoboCupMapper(Node):
         
         # Variables de estado
         self.global_pcd = o3d.geometry.PointCloud()
+        self.colored_pcd = o3d.geometry.PointCloud()
         self.latest_image = None
         self.camera_info = None
         self.bridge = CvBridge()
@@ -115,11 +116,20 @@ class RoboCupMapper(Node):
         
         if self.latest_image is not None and self.camera_info is not None:
             try:
-                t_cam_radar = self.tf_buffer.lookup_transform(
-                    self.camera_info.header.frame_id,
-                    msg.header.frame_id,
-                    rclpy.time.Time()
-                )
+                cloud_stamp = rclpy.time.Time.from_msg(msg.header.stamp)
+                try:
+                    t_cam_radar = self.tf_buffer.lookup_transform(
+                        self.camera_info.header.frame_id,
+                        msg.header.frame_id,
+                        cloud_stamp,
+                        timeout=rclpy.duration.Duration(seconds=0.1)
+                    )
+                except Exception:
+                    t_cam_radar = self.tf_buffer.lookup_transform(
+                        self.camera_info.header.frame_id,
+                        msg.header.frame_id,
+                        rclpy.time.Time()
+                    )
                 
                 # Imagen a OpenCV
                 cv_img = self.bridge.imgmsg_to_cv2(self.latest_image, desired_encoding='rgb8')
@@ -157,8 +167,20 @@ class RoboCupMapper(Node):
                     
                     # Pintar los puntos frontales
                     colors[final_idx] = cv_img_float[final_v, final_u, :]
-            except Exception:
-                pass # Falla silenciosa si no hay TF de cámara en este frame
+                    
+                    # Extraer puntos PURAMENTE coloreados para no perderlos al promediar con grises
+                    colored_pts = points[final_idx]
+                    colored_cols = colors[final_idx]
+                    c_pcd = o3d.geometry.PointCloud()
+                    c_pcd.points = o3d.utility.Vector3dVector(colored_pts)
+                    c_pcd.colors = o3d.utility.Vector3dVector(colored_cols)
+                    self.colored_pcd += c_pcd
+                    
+            except Exception as e:
+                # Falla si no hay TF de cámara en este frame o algo similar
+                if not hasattr(self, 'tf_warned'):
+                    self.get_logger().warn(f"TF Camera Color error (will not repeat): {e}")
+                    self.tf_warned = True
                 
         scan_pcd.colors = o3d.utility.Vector3dVector(colors)
         
@@ -173,9 +195,12 @@ class RoboCupMapper(Node):
         
         # 5. Acumular y optimizar
         self.global_pcd += scan_pcd
+        
         # Sub-muestreo periódico para evitar saturar memoria RAM
-        if len(self.global_pcd.points) > 2000000:
+        if len(self.global_pcd.points) > 1000000:
             self.global_pcd = self.global_pcd.voxel_down_sample(voxel_size=self.voxel_size)
+        if len(self.colored_pcd.points) > 500000:
+            self.colored_pcd = self.colored_pcd.voxel_down_sample(voxel_size=self.voxel_size)
 
     def save_robocup_map(self):
         self.get_logger().info("\n💾 ¡Guardando mapa RoboCup, un momento!...")
@@ -184,8 +209,26 @@ class RoboCupMapper(Node):
             self.get_logger().error("❌ El mapa está vacío.")
             return
 
-        # Voxel final para limpiar y estandarizar densidad según reglas
+        # Voxel final para la geometria global (gris)
         final_pcd = self.global_pcd.voxel_down_sample(voxel_size=self.voxel_size)
+        
+        # Transferir los colores puros desde colored_pcd
+        if len(self.colored_pcd.points) > 0:
+            final_colored = self.colored_pcd.voxel_down_sample(voxel_size=self.voxel_size)
+            
+            # KdTree para buscar el punto global mas cercano a cada punto coloreado
+            kdtree = o3d.geometry.KDTreeFlann(final_pcd)
+            final_colors = np.asarray(final_pcd.colors)
+            c_points = np.asarray(final_colored.points)
+            c_colors = np.asarray(final_colored.colors)
+            
+            for i in range(len(c_points)):
+                [k, idx, _] = kdtree.search_radius_vector_3d(c_points[i], self.voxel_size * 2)
+                if k > 0:
+                    # Sobreescribir el gris con el color real
+                    final_colors[idx[0]] = c_colors[i]
+                    
+            final_pcd.colors = o3d.utility.Vector3dVector(final_colors)
         
         # REGLA ROBOCUP: Rotar matemáticamente para que el Norte sea el eje +Y
         # Originalmente ROS2 tiene el frente como +X.

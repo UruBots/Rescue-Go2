@@ -143,26 +143,57 @@ class GeoTiffMapper(Node):
         # Pintar muros
         img_slam[walls_mask] = (120, 40, 0)
         
-        # Superponer el SLAM explorado en el centro del mapa grande
-        img[offset_y:offset_y+h, offset_x:offset_x+w] = np.where(
-            explored_mask[:,:,np.newaxis], 
-            img_slam, 
-            img[offset_y:offset_y+h, offset_x:offset_x+w]
-        )
+        # Regla RoboCup: El robot debe apuntar hacia ARRIBA (+Y).
+        # En ROS, el robot apunta hacia +X y su izquierda es +Y.
+        # Por lo tanto, para que +X sea ARRIBA y +Y sea IZQUIERDA en la imagen:
+        # px (X imagen) debe decrecer a medida que Y del mundo crece.
+        # py (Y imagen) debe decrecer a medida que X del mundo crece.
         
-        # Offset del mapa (para proyectar coordenadas métricas a píxeles)
-        # La orientación en ROS es +X a la derecha, +Y arriba (dependiendo del marco).
+        if len(self.robot_path) > 0:
+            start_x, start_y = self.robot_path[0]
+        else:
+            start_x, start_y = 0.0, 0.0
+            
+        def world_to_px(wx, wy):
+            # px y py centrados en el inicio del robot
+            dx = wx - start_x
+            dy = wy - start_y
+            px = int(W//2 - dy * ppm)
+            py = int(H//2 - dx * ppm)
+            return (px, py)
+            
+        # Superponer el SLAM explorado en el mapa grande
+        # En img_slam, 'row' corresponde a 'y' (izquierda-derecha) y 'col' a 'x' (adelante-atrás)
+        # img_slam[row, col] -> mundo(origin_x + col*res, origin_y + row*res)
+        # px = W//2 - (origin_y + row*res - start_y)*ppm = offset_px - row
+        # py = H//2 - (origin_x + col*res - start_x)*ppm = offset_py - col
+        
         origin_x = self.latest_map.info.origin.position.x
         origin_y = self.latest_map.info.origin.position.y
         
-        def world_to_px(wx, wy):
-            # El OccupancyGrid se dibuja con data.reshape((h,w)) sin invertir:
-            #   img[offset_y + row, offset_x + col] = mundo(origin_x + col*res, origin_y + row*res)
-            # Por lo tanto: col = (wx - origin_x)/res, row = (wy - origin_y)/res
-            # NO se invierte Y.
-            px = int((wx - origin_x) / res)
-            py = int((wy - origin_y) / res)
-            return (offset_x + px, offset_y + py)
+        offset_px = int(W//2 - (origin_y - start_y)*ppm)
+        offset_py = int(H//2 - (origin_x - start_x)*ppm)
+        
+        # Transformar img_slam (h, w) a las coordenadas de la imagen (w, h) con ejes invertidos
+        img_slam_mapped = np.transpose(img_slam, (1, 0, 2))[::-1, ::-1, :]
+        mask_mapped = np.transpose(explored_mask, (1, 0))[::-1, ::-1]
+        
+        y_start = offset_py - w + 1
+        x_start = offset_px - h + 1
+        
+        # Recortar si se sale de los bordes (por seguridad)
+        y0, y1 = max(0, y_start), min(H, y_start + w)
+        x0, x1 = max(0, x_start), min(W, x_start + h)
+        
+        sy0, sy1 = y0 - y_start, w - (y_start + w - y1)
+        sx0, sx1 = x0 - x_start, h - (x_start + h - x1)
+        
+        if y1 > y0 and x1 > x0:
+            img[y0:y1, x0:x1] = np.where(
+                mask_mapped[sy0:sy1, sx0:sx1, np.newaxis],
+                img_slam_mapped[sy0:sy1, sx0:sx1],
+                img[y0:y1, x0:x1]
+            )
             
         # Regla: Robot Path Magenta (120, 0, 140) -> BGR (140, 0, 120), grosor 2cm
         path_thick = max(1, int(0.02 * ppm))
