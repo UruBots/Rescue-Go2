@@ -75,10 +75,12 @@ class VisionDetector(Node):
         self.start_time = datetime.datetime.now()
         
         # Motion detection and tracking (RoboCup Section C)
-        self.image_pub = self.create_publisher(Image, '/vision/motion_detection/image', 10)
+        self.image_pub = self.create_publisher(Image, '/vision/motion_detection/image', qos_profile_sensor_data)
         self.prev_gray = None
         self.trail_points = []
         self.centroid_history = []
+        self.prev_centroid = None
+        self.missed_frames = 0
 
         self.get_logger().info("==================================================")
         self.get_logger().info("👁️ Visión Activa. Buscando Hazmat, AprilTags y Objetos.")
@@ -265,25 +267,62 @@ class VisionDetector(Node):
         # 3. Motion Detection and Target Tracking (RoboCup Section C)
         # ==========================================
         gray = cv2.cvtColor(cv_img, cv2.COLOR_BGR2GRAY)
-        gray = cv2.GaussianBlur(gray, (9, 9), 0)
+        gray = cv2.GaussianBlur(gray, (5, 5), 0)
         
         annotated_img = cv_img.copy()
         target_contour = None
         
         if self.prev_gray is not None:
             frame_diff = cv2.absdiff(self.prev_gray, gray)
-            _, thresh = cv2.threshold(frame_diff, 10, 255, cv2.THRESH_BINARY)
-            thresh = cv2.dilate(thresh, None, iterations=2)
+            _, thresh = cv2.threshold(frame_diff, 12, 255, cv2.THRESH_BINARY)
+            thresh = cv2.dilate(thresh, None, iterations=1)
             
             contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
             
-            # Find the largest moving contour (excluding too small or huge frames)
-            max_area = 0
+            # Find the solid moving target contour (excluding hollow disk edges or stretched arms)
+            candidates = []
             for c in contours:
                 area = cv2.contourArea(c)
-                if area > max_area and 200 < area < (cv_img.shape[0] * cv_img.shape[1] * 0.5):
-                    max_area = area
-                    target_contour = c
+                if 120 < area < 8000:
+                    (x, y, w, h) = cv2.boundingRect(c)
+                    aspect_ratio = float(w) / h if h > 0 else 1.0
+                    if 0.5 < aspect_ratio < 2.0:
+                        # Check solidity (solid target vs hollow/thin circular edges)
+                        hull = cv2.convexHull(c)
+                        hull_area = cv2.contourArea(hull)
+                        solidity = float(area) / hull_area if hull_area > 0 else 0
+                        if solidity > 0.70:
+                            cx = x + w // 2
+                            cy = y + h // 2
+                            candidates.append((c, area, cx, cy))
+            
+            # Select the best target contour using centroid distance tracking
+            if len(candidates) > 0:
+                self.missed_frames = 0
+                if self.prev_centroid is not None:
+                    best_cand = None
+                    min_dist = float('inf')
+                    for cand in candidates:
+                        dist = np.sqrt((cand[2] - self.prev_centroid[0])**2 + (cand[3] - self.prev_centroid[1])**2)
+                        if dist < min_dist:
+                            min_dist = dist
+                            best_cand = cand
+                    
+                    if min_dist < 160:
+                        target_contour = best_cand[0]
+                        self.prev_centroid = (best_cand[2], best_cand[3])
+                    else:
+                        largest_cand = max(candidates, key=lambda x: x[1])
+                        target_contour = largest_cand[0]
+                        self.prev_centroid = (largest_cand[2], largest_cand[3])
+                else:
+                    largest_cand = max(candidates, key=lambda x: x[1])
+                    target_contour = largest_cand[0]
+                    self.prev_centroid = (largest_cand[2], largest_cand[3])
+            else:
+                self.missed_frames += 1
+                if self.missed_frames > 20:
+                    self.prev_centroid = None
             
             if target_contour is not None:
                 (x, y, w, h) = cv2.boundingRect(target_contour)
