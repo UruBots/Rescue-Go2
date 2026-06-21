@@ -1,0 +1,112 @@
+================================================================================
+          🏆 GUÍA DE COMANDOS DE EMERGENCIA PARA LA COMPETENCIA 🏆
+                        Equipo: UruBots (RoboCup 2026)
+================================================================================
+
+Este documento contiene los comandos esenciales que puedes necesitar en la pista,
+incluyendo arranque, diagnóstico y soluciones rápidas si algo falla o se cuelga.
+
+--------------------------------------------------------------------------------
+1. COMPILACIÓN Y CARGA DE ENTORNO
+--------------------------------------------------------------------------------
+
+# Paso indispensable cada vez que abres una terminal nueva o cambias código:
+cd ~/ros2_ws
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+
+# Compilar solo tus paquetes si modificaste algún script de Python o C++:
+colcon build --symlink-install --packages-select go2_robot_sdk urubots_vision
+
+--------------------------------------------------------------------------------
+2. ARRANCAR EL SISTEMA UNIFICADO (TODO EN UNO)
+--------------------------------------------------------------------------------
+
+# Configurar variables de red (IP del perro) y lanzar todo el sistema
+# (Conexión WebRTC + Mando + SLAM + Mapeador RoboCup + Visión HAZMAT + Audio TTS):
+export ROBOT_IP="192.168.12.1"     # IP por defecto (cambiar a 192.168.123.1 si es por Ethernet/Wifi directo)
+export CONN_TYPE="webrtc"
+ros2 launch urubots_vision robocup.launch.py mission:=Mision_1
+
+# Si quieres correrlo SIN el joystick conectado:
+ros2 launch urubots_vision robocup.launch.py mission:=Mision_1 joystick:=false
+
+--------------------------------------------------------------------------------
+3. DIAGNÓSTICO RÁPIDO EN ROS 2 (Saber qué está pasando)
+--------------------------------------------------------------------------------
+
+# Listar todos los nodos activos (para ver si alguno se cayó):
+ros2 node list
+
+# Listar todos los topics activos en la red:
+ros2 topic list
+
+# Ver si el LiDAR está enviando datos en tiempo real (debe mostrar una tasa en Hz):
+ros2 topic hz /point_cloud2
+
+# Ver las imágenes de la cámara en consola (ver si publica datos):
+ros2 topic hz /camera/image_raw
+
+# Ver qué publica un topic en tiempo real (ejemplo, coordenadas de víctimas detectadas):
+ros2 topic echo /vision/detections
+
+# Ver si el ROS 2 recibe las señales del joystick:
+ros2 topic echo /joy
+
+--------------------------------------------------------------------------------
+4. CONTROL DE PROCESOS Y CÓMO MATAR UN NODO O PROCESO COLGADO
+--------------------------------------------------------------------------------
+Si una terminal se congela, no responde al Ctrl+C, o el robot no reacciona porque
+quedó un proceso en segundo plano "bloqueando" el puerto del mando o de la cámara:
+
+🔹 Opción A: Matar por nombre de archivo/script (La más recomendada y segura)
+# Mata a la fuerza todos los scripts de Python que están corriendo:
+killall -9 python3
+
+# Mata específicamente el nodo del driver del perro:
+killall -9 go2_driver_node
+
+🔹 Opción B: Encontrar el ID del Proceso (PID) y matarlo manualmente
+# 1. Busca en la lista de procesos el script que quieres matar (ej. vision_detector):
+ps aux | grep -i vision_detector
+
+# El comando anterior te devolverá líneas como esta:
+# vinicio   28183  5.4  3.2 412312 98432 pts/1  Sl+  18:15   0:05 python3 vision_detector.py
+# (El número '28183' es el PID - Process ID)
+
+# 2. Matar el proceso a la fuerza usando su PID:
+kill -9 28183
+
+🔹 Opción C: Matar procesos por patrón de línea de comandos
+# Mata cualquier proceso de Python que contenga la palabra "webrtc" en su ejecución:
+pkill -f -9 webrtc
+
+# Mata cualquier proceso que contenga "urubots_vision" en su comando:
+pkill -f -9 urubots_vision
+
+--------------------------------------------------------------------------------
+5. SOLUCIÓN DE PROBLEMAS COMUNES (Quick Fixes)
+--------------------------------------------------------------------------------
+
+❌ El joystick no responde o no se mueve:
+----------------------------------------
+1. Asegúrate de darle permisos de lectura/escritura al puerto del joystick:
+   sudo chmod a+rw /dev/input/js* /dev/input/event*
+2. Verifica si Linux reconoce el mando físicamente en la PC:
+   jstest /dev/input/js0
+   (Al mover las palancas deben cambiar los números en la pantalla. Presiona Ctrl+C para salir).
+
+❌ Error "nostart code is founde" o fallo de conexión WebRTC:
+----------------------------------------------------------
+1. Apaga y enciende el perro.
+2. Asegúrate de apagar la aplicación móvil de Unitree en tu teléfono (si el teléfono está conectado al perro por WiFi, bloqueará la conexión WebRTC de la PC).
+3. Prueba hacer ping a la IP del perro para ver si hay conexión de red:
+   ping 192.168.12.1   (o ping 192.168.123.1)
+
+❌ Los mapas PLY no se guardan al final:
+--------------------------------------
+1. Los archivos se guardan al detener el proceso del mapper con un único Ctrl+C.
+2. No uses Ctrl+Z para detener el proceso, ya que Ctrl+Z congela el programa en segundo plano sin dejar que ejecute su función de guardado final. Usa siempre Ctrl+C.
+3. Si un nodo se congeló y tuviste que usar "kill -9", el archivo PLY o GeoTIFF de esa sesión podría no haberse guardado completo.
+
+================================================================================
