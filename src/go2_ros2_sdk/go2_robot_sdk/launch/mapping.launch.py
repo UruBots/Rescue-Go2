@@ -49,11 +49,13 @@ def generate_launch_description():
     with_rviz = LaunchConfiguration('rviz', default='true')
     with_foxglove = LaunchConfiguration('foxglove', default='true')
     with_joystick = LaunchConfiguration('joystick', default='true')
+    with_slam = LaunchConfiguration('slam', default='true')
     
     launch_args = [
         DeclareLaunchArgument('rviz', default_value='true', description='Launch RViz2'),
         DeclareLaunchArgument('foxglove', default_value='true', description='Launch Foxglove Bridge'),
         DeclareLaunchArgument('joystick', default_value='true', description='Launch joystick control'),
+        DeclareLaunchArgument('slam', default_value='true', description='Launch SLAM Toolbox'),
     ]
     
     # Load URDF
@@ -199,6 +201,7 @@ def generate_launch_description():
                 os.path.join(get_package_share_directory('slam_toolbox'),
                             'launch', 'online_async_launch.py')
             ]),
+            condition=IfCondition(with_slam),
             launch_arguments={
                 'slam_params_file': config_paths['slam'],
                 'use_sim_time': use_sim_time,

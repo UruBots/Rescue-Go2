@@ -19,17 +19,41 @@ source install/setup.bash
 colcon build --symlink-install --packages-select go2_robot_sdk urubots_vision
 
 --------------------------------------------------------------------------------
-2. ARRANCAR EL SISTEMA UNIFICADO (TODO EN UNO)
+2. ARRANCAR EL SISTEMA UNIFICADO (TODO EN UNO) Y OPTIMIZAR RECURSOS
 --------------------------------------------------------------------------------
 
-# Configurar variables de red (IP del perro) y lanzar todo el sistema
-# (Conexión WebRTC + Mando + SLAM + Mapeador RoboCup + Visión HAZMAT + Audio TTS):
+# Configurar variables de red (IP del perro) y lanzar todo el sistema:
 export ROBOT_IP="192.168.12.1"     # IP por defecto (cambiar a 192.168.123.1 si es por Ethernet/Wifi directo)
 export CONN_TYPE="webrtc"
 ros2 launch urubots_vision robocup.launch.py mission:=Mision_1
 
-# Si quieres correrlo SIN el joystick conectado:
-ros2 launch urubots_vision robocup.launch.py mission:=Mision_1 joystick:=false
+# ARGUMENTOS DE OPTIMIZACIÓN Y CONTROL DE RECURSOS:
+# Puedes desactivar módulos específicos para ahorrar CPU/RAM en la competencia
+# agregando "nombre_modulo:=false" al final del comando de lanzamiento.
+
+# 🔹 Desactivar el Mando/Joystick (si se controla de otra forma):
+#    joystick:=false
+# 🔹 Desactivar el Módulo de Voz / Alertas de Audio:
+#    audio:=false
+# 🔹 Desactivar la Detección de Visión IA (HAZMAT/AprilTag en CPU):
+#    vision:=false
+# 🔹 Desactivar la creación del Mapa de Puntos 3D (RoboCup PLY):
+#    robocup_mapper:=false
+# 🔹 Desactivar la creación del Mapa de Ocupación 2D y GeoTIFF:
+#    geotiff:=false
+# 🔹 Desactivar el SLAM (SLAM Toolbox - útil si no requieres hacer mapa):
+#    slam:=false
+
+# 💡 EJEMPLOS DE USO PRÁCTICO:
+
+# Ejemplo 1: Solo teleoperar el perro con el joystick (máxima optimización de CPU):
+ros2 launch urubots_vision robocup.launch.py mission:=Mision_1 slam:=false audio:=false vision:=false robocup_mapper:=false geotiff:=false rviz:=false foxglove:=false
+
+# Ejemplo 2: Mapear y controlar pero SIN procesamiento de Visión ni Audio:
+ros2 launch urubots_vision robocup.launch.py mission:=Mision_1 vision:=false audio:=false
+
+# Ejemplo 3: Correr todo SIN el audio TTS (por si falla la bocina o librería de voz):
+ros2 launch urubots_vision robocup.launch.py mission:=Mision_1 audio:=false
 
 --------------------------------------------------------------------------------
 3. DIAGNÓSTICO RÁPIDO EN ROS 2 (Saber qué está pasando)
