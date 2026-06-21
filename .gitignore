@@ -49,3 +49,5 @@ capturas/
 *.db3
 mapas/.~lock.*
 mapas/*.ply
+mapas/*.csv
+mapas/*.tiff

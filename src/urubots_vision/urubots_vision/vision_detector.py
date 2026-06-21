@@ -45,12 +45,28 @@ class VisionDetector(Node):
         self.get_logger().info("Cargando Modelos de IA...")
         
         # YOLO Unificado para Hazmat y Objetos Reales
-        unified_path = os.path.expanduser('~/ros2_ws/Rescue-Go2/vision/best_all.pt')
+        # 1. Intentar buscar en el directorio share del paquete de ROS2
+        try:
+            from ament_index_python.packages import get_package_share_directory
+            share_dir = get_package_share_directory('urubots_vision')
+            unified_path = os.path.join(share_dir, 'models', 'best_all.pt')
+        except Exception:
+            unified_path = ""
+            
+        # 2. Intentar buscar relativo al script (para entornos de desarrollo/symlink)
+        if not os.path.exists(unified_path):
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            unified_path = os.path.abspath(os.path.join(script_dir, '../../../../vision/best_all.pt'))
+            
+        # 3. Fallback a la ruta absoluta tradicional
+        if not os.path.exists(unified_path):
+            unified_path = os.path.expanduser('~/ros2_ws/Rescue-Go2/vision/best_all.pt')
+
         if os.path.exists(unified_path):
             self.unified_model = YOLO(unified_path)
-            self.get_logger().info("✅ Súper-Modelo UNIFICADO (best_all) cargado.")
+            self.get_logger().info(f"✅ Súper-Modelo UNIFICADO (best_all) cargado desde: {unified_path}")
         else:
-            self.get_logger().error("❌ No se encontró best_all.pt en la carpeta vision/")
+            self.get_logger().error(f"❌ No se encontró best_all.pt (buscado en share, relativo y ruta fija)")
             self.unified_model = None
         
         # AprilTag (pupil_apriltags soporta tag36h11 nativamente)
