@@ -171,6 +171,7 @@ def generate_launch_description():
             name='go2_teleop_node',
             condition=IfCondition(with_joystick),
             parameters=[config_paths['twist_mux']],
+            remappings=[('cmd_vel', 'cmd_vel_joy')]
         ),
         Node(
             package='twist_mux',

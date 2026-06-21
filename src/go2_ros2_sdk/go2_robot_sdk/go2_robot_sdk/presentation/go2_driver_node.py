@@ -280,6 +280,8 @@ class Go2DriverNode(Node):
     def _on_robot_validated(self, robot_id: str) -> None:
         """Callback after robot validation"""
         self.get_logger().info(f"Robot {robot_id} validated and ready")
+        self.get_logger().info("Disabling obstacle avoidance mode on the robot for competition terrain...")
+        self.robot_control_service.set_obstacle_avoidance(False, robot_id)
 
     def _on_robot_data_received(self, msg: Dict[str, Any], robot_id: str) -> None:
         """Callback for receiving data from robot"""

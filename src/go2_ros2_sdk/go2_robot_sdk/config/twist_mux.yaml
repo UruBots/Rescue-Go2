@@ -2,13 +2,13 @@
   ros__parameters:
     axis_linear:
       x: 1
-      y: 3
+      y: 0
     scale_linear:
       x: 0.5
       y: 0.5
 
     axis_angular:
-      yaw: 6
+      yaw: 2
     scale_angular:
       yaw: 1.0
 

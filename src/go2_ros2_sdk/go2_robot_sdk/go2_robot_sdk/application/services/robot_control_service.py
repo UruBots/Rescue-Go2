@@ -18,18 +18,16 @@ class RobotControlService:
 
     def __init__(self, controller: IRobotController):
         self.controller = controller
+        self.last_sent_non_zero = False
+        self.last_joy_buttons = []
 
     def handle_cmd_vel(self, x: float, y: float, z: float, robot_id: str, obstacle_avoidance: bool = False) -> None:
-        """Process movement command"""
+        """Process movement command. Sends non-zero commands and exactly one zero command to stop."""
         try:
-            if x != 0.0 or y != 0.0 or z != 0.0:
-                _ = gen_mov_command(
-                    round(x, 2), 
-                    round(y, 2), 
-                    round(z, 2), 
-                    obstacle_avoidance
-                )
+            is_zero = (x == 0.0 and y == 0.0 and z == 0.0)
+            if not is_zero or self.last_sent_non_zero:
                 self.controller.send_movement_command(robot_id, x, y, z)
+                self.last_sent_non_zero = not is_zero
         except Exception as e:
             logger.error(f"Error handling cmd_vel: {e}")
 
@@ -45,17 +43,24 @@ class RobotControlService:
             logger.error(f"Error handling WebRTC request: {e}")
 
     def handle_joy_command(self, joy_buttons: list, robot_id: str) -> None:
-        """Process joystick commands"""
+        """Process joystick commands using rising edge to prevent queue flooding"""
         try:
             if joy_buttons and len(joy_buttons) > 1:
-                if joy_buttons[1]:  # Stand down
+                # Initialize last_joy_buttons if empty
+                if not self.last_joy_buttons or len(self.last_joy_buttons) < len(joy_buttons):
+                    self.last_joy_buttons = [0] * len(joy_buttons)
+                
+                # Button A (index 0) - Stand Up
+                if joy_buttons[0] == 1 and self.last_joy_buttons[0] == 0:
+                    self.controller.send_stand_up_command(robot_id)
+                    logger.info(f"Stand up command sent to robot {robot_id}")
+                
+                # Button B (index 1) - Stand Down
+                elif joy_buttons[1] == 1 and self.last_joy_buttons[1] == 0:
                     self.controller.send_stand_down_command(robot_id)
                     logger.info(f"Stand down command sent to robot {robot_id}")
                 
-                elif joy_buttons[0]:  # Stand up
-                    self.controller.send_stand_up_command(robot_id)
-                    logger.info(f"Stand up command sent to robot {robot_id}")
-
+                self.last_joy_buttons = list(joy_buttons)
         except Exception as e:
             logger.error(f"Error handling joy command: {e}")
 
