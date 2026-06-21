@@ -390,7 +390,7 @@ class Go2DriverNode(Node):
                 # Process joystick commands
                 if self.joy_state.buttons:
                     self.robot_control_service.handle_joy_command(
-                        self.joy_state.buttons, robot_id
+                        self.joy_state.buttons, self.joy_state.axes, robot_id
                     )
 
                 # Process WebRTC commands
