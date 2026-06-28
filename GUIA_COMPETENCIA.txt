@@ -145,8 +145,14 @@ colcon build --symlink-install --packages-select go2_gazebo
 source install/setup.bash
 
 # 🔹 Paso 2: Lanzar la simulación de Gazebo con un circuito específico
-# Mundos disponibles: challenge1, challenge2, house, two_levels, semi1, semi2, final1
+# Mundos disponibles: challenge1, challenge2, house, two_levels, semi1, semi2, final1, rubble
 ros2 launch go2_gazebo sim_robocup.launch.py world:=challenge1
+
+# 💡 CAMBIAR LA POSICIÓN DE INICIO (SPAWN POSITION) DEL ROBOT:
+# Si el robot aparece atascado en medio de los obstáculos (como en "rubble"),
+# puedes definir las coordenadas X, Y, Z de inicio agregando x:=... y:=... z:=...
+# Ejemplo (iniciar alejado del centro en un área más limpia):
+ros2 launch go2_gazebo sim_robocup.launch.py world:=rubble x:=3.0 y:=2.0 z:=0.6
 
 # 🔹 Paso 3: Arrancar el nodo de Exploración Autónoma Reactiva
 # (Este nodo leerá el LiDAR /scan y esquivará obstáculos automáticamente)
