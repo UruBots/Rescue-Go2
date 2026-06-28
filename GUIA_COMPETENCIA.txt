@@ -133,4 +133,29 @@ pkill -f -9 urubots_vision
 2. No uses Ctrl+Z para detener el proceso, ya que Ctrl+Z congela el programa en segundo plano sin dejar que ejecute su función de guardado final. Usa siempre Ctrl+C.
 3. Si un nodo se congeló y tuviste que usar "kill -9", el archivo PLY o GeoTIFF de esa sesión podría no haberse guardado completo.
 
+--------------------------------------------------------------------------------
+6. SIMULACIÓN GAZEBO Y EXPLORACIÓN AUTÓNOMA
+--------------------------------------------------------------------------------
+Si quieres probar el comportamiento del perro de forma autónoma en los mapas
+de la RoboCup usando el simulador Gazebo:
+
+# 🔹 Paso 1: Compilar el paquete de simulación (si no lo has hecho)
+cd ~/ros2_ws
+colcon build --symlink-install --packages-select go2_gazebo
+source install/setup.bash
+
+# 🔹 Paso 2: Lanzar la simulación de Gazebo con un circuito específico
+# Mundos disponibles: challenge1, challenge2, house, two_levels, semi1, semi2, final1
+ros2 launch go2_gazebo sim_robocup.launch.py world:=challenge1
+
+# 🔹 Paso 3: Arrancar el nodo de Exploración Autónoma Reactiva
+# (Este nodo leerá el LiDAR /scan y esquivará obstáculos automáticamente)
+ros2 run go2_gazebo autonomous_wander --ros-args -r cmd_vel:=cmd_vel_nav
+
+# 💡 NOTA DE SEGURIDAD (Prioridad de Mando):
+# Al lanzar con "-r cmd_vel:=cmd_vel_nav", las órdenes autónomas pasan por twist_mux.
+# Si en cualquier momento tocas una palanca del joystick físico (cmd_vel_joy),
+# el mando tomará el control absoluto del perro de inmediato (prioridad alta).
+# Si sueltas el mando por más de 0.5 segundos, el perro retomará la marcha autónoma.
+
 ================================================================================
